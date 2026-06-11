@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+Counseling_KOR_2025_logs/
+
+# Models
+models/
+
+# SSL
+ssl/
+
+# Environment
+.env
+
+# Media
+*.mp3
+*.webm
+
+# IDE
+.vscode/
+.idea/
