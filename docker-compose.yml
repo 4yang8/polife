@@ -1,0 +1,54 @@
+services:
+  unist:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ${UNIST_CONTAINER_NAME:-chatbot-unist}
+    command: >
+      python -m uvicorn Counseling_KOR_2025.unist:app
+      --host ${API_HOST:-0.0.0.0}
+      --port ${UNIST_PORT:-8001}
+    ports:
+      - "${UNIST_HOST_PORT:-8001}:${UNIST_PORT:-8001}"
+    env_file:
+      - .env
+    volumes:
+      - ${HOST_LOGS_DIR:-../Counseling_KOR_2025_logs}:${LOG_DIR:-/app/logs_depression}
+    restart: ${DOCKER_RESTART_POLICY:-unless-stopped}
+
+  main:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: ${MAIN_CONTAINER_NAME:-chatbot-main}
+    command: >
+      python -m uvicorn Counseling_KOR_2025.main:app
+      --host ${API_HOST:-0.0.0.0}
+      --port ${MAIN_PORT:-8000}
+      --ssl-certfile=${SSL_CERT_PATH}
+      --ssl-keyfile=${SSL_KEY_PATH}
+    ports:
+      - "${MAIN_HOST_PORT:-8000}:${MAIN_PORT:-8000}"
+    env_file:
+      - .env
+    environment:
+      UNIST_API_BASE: ${DOCKER_UNIST_API_BASE:-http://unist:8001}
+      VLLM_API_BASE: ${DOCKER_VLLM_API_BASE:-http://host.docker.internal:9000/v1}
+      HF_HOME: ${HF_HOME:-/root/.cache/huggingface}
+      LLAMA_DEVICE: ${DOCKER_LLAMA_DEVICE:-cuda:0}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${HOST_SSL_DIR:-./ssl}:${CONTAINER_SSL_DIR:-/app/ssl}
+      - ${HOST_LOGS_DIR:-../Counseling_KOR_2025_logs}:${LOG_DIR:-/app/logs_depression}
+      - ${HOST_HF_CACHE_DIR:-~/.cache/huggingface}:${HF_HOME:-/root/.cache/huggingface}
+    depends_on:
+      - unist
+    restart: ${DOCKER_RESTART_POLICY:-unless-stopped}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["1"]
+              capabilities: [gpu]

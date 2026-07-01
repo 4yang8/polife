@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Git
+.git/
+.gitignore
+
+# Logs
+*.log
+Counseling_KOR_2025_logs/
+logs/
+logs_insomnia/
+
+# Environment
+.env
+.env.*
+
+# SSL
+ssl/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Training artifacts
+wandb/
+runs/
+outputs/
+checkpoints/
+
+# Temporary files
+tmp/
+temp/
+cache/
+
+# vLLM model
+models/exaone_110_maxturn10/

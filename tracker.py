@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from typing import Dict, List
 from datetime import datetime
 
+LOG_DIR = os.getenv("LOG_DIR", "logs")
+
 class Turn(BaseModel):
     role: str
     text: str
@@ -205,7 +207,7 @@ class ChatTracker:
                 if score in [0, 1, 2, 3]:
                     score = 3 - score
             self.cesd_info[user_id][item] = score
-            log_dir = "logs"
+            log_dir = LOG_DIR
             os.makedirs(log_dir, exist_ok=True)
 
             # tracker에 기록된 시간 가져오기 (없으면 지금 시간 저장)
@@ -248,7 +250,7 @@ class ChatTracker:
             sorted_cesd_info = sorted(self.cesd_info[user_id].items(), key = lambda x: x[0])
             scores = [value for _, value in sorted_cesd_info]
             
-            log_dir = "logs"
+            log_dir = LOG_DIR
             os.makedirs(log_dir, exist_ok=True)
 
             # tracker.py 내부이므로 self.get_time 사용

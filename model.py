@@ -2,10 +2,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 os.environ["VLLM_LOGGING_LEVEL"] = "WARNING" 
 os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 os.environ["TRANSFORMERS_NO_TF"] = "1"
+HF_LOCAL_FILES_ONLY = os.getenv("HF_LOCAL_FILES_ONLY", "1").lower() in ("1", "true", "yes", "on")
+if HF_LOCAL_FILES_ONLY:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -25,10 +29,7 @@ from PIL import Image
 import numpy as np
 from deepface import DeepFace
 from datetime import datetime, timedelta
-# import deepspeed
 from dotenv import load_dotenv
-from vllm import SamplingParams, LLM
-from vllm.lora.request import LoRARequest
 from collections import defaultdict
 
 import asyncio
@@ -37,6 +38,33 @@ import httpx
 from Counseling_KOR_2025.missing_labels import get_all_labels
 from Counseling_KOR_2025.missing_labels import classify_label
 client = AsyncOpenAI(api_key=os.environ.get("POSTECH_GPT_API"))
+
+DETECTOR_LORA_PATH = os.getenv(
+    "DETECTOR_LORA_PATH",
+    "Counseling_KOR_2025/models/CESD_detector_ver2",
+)
+FREQ_LORA_PATH = os.getenv(
+    "FREQ_LORA_PATH",
+    "Counseling_KOR_2025/models/cesd_freq",
+)
+DEPRESSION_YAML_PATH = os.getenv(
+    "DEPRESSION_YAML_PATH",
+    "Counseling_KOR_2025/data/counsel_prompt.yaml",
+)
+LABEL_EXAMPLES_PATH = os.getenv(
+    "LABEL_EXAMPLES_PATH",
+    "Counseling_KOR_2025/data/exploration_paraphrased_with_score.jsonl",
+)
+LOG_DIR = os.getenv("LOG_DIR", "logs")
+
+
+def resolve_model_path(model_name: str) -> str:
+    model_path = os.getenv("LLAMA_MODEL_PATH")
+    if model_path:
+        if HF_LOCAL_FILES_ONLY and not os.path.isdir(model_path):
+            raise FileNotFoundError(f"LLAMA_MODEL_PATH does not exist: {model_path}")
+        return model_path
+    return model_name
 
 
 @dataclass
@@ -52,33 +80,42 @@ class CounselingChat:
                   llama_model_name: str = "meta-llama/Llama-3.1-8B-Instruct",
                   use_lora: bool = False
                   ):
-            
+        hf_token = os.getenv("HF_TOKEN")
+        self.LLAMA_DEVICE = os.getenv("LLAMA_DEVICE", "cuda:0")
+        llama_model_path = resolve_model_path(llama_model_name)
+        
         self.llama_base_model = AutoModelForCausalLM.from_pretrained(
-            llama_model_name, 
+            llama_model_path,
+            token=hf_token,
+            local_files_only=HF_LOCAL_FILES_ONLY,
             ignore_mismatched_sizes=True,
             torch_dtype=torch.float16,
-            device_map={"": "cuda:1"}
+            device_map={"": self.LLAMA_DEVICE}
         )
+
         self.llama_tokenizer = AutoTokenizer.from_pretrained(
-            llama_model_name,
-            trust_remote_code = True
+            llama_model_path,
+            token=hf_token,
+            local_files_only=HF_LOCAL_FILES_ONLY,
+            trust_remote_code=True
         )
         self.llama_tokenizer.pad_token = self.llama_tokenizer.eos_token
         self.llama_tokenizer.padding_side = "right"
         
-        symptom_adapter_path = "Counseling_KOR_2025/models/CESD_detector_ver2"
-        freq_adapter_path = "Counseling_KOR_2025/models/cesd_freq1103"
+        symptom_adapter_path = DETECTOR_LORA_PATH
+        freq_adapter_path = FREQ_LORA_PATH
         self.llama_model = PeftModelForCausalLM.from_pretrained(
             self.llama_base_model,
             symptom_adapter_path,
             adapter_name="symptom",
-            device_map={"": "cuda:1"}
+            local_files_only=HF_LOCAL_FILES_ONLY,
+            device_map={"": self.LLAMA_DEVICE}
         )
-        self.llama_model.load_adapter(freq_adapter_path, adapter_name="freq")
+        self.llama_model.load_adapter(freq_adapter_path, adapter_name="freq", local_files_only=HF_LOCAL_FILES_ONLY)
         self.llama_model.eval()
         
-        self.freq_tokenizer = AutoTokenizer.from_pretrained(freq_adapter_path)
-        self.symptom_tokenizer = AutoTokenizer.from_pretrained(symptom_adapter_path)
+        self.freq_tokenizer = self.llama_tokenizer
+        self.symptom_tokenizer = self.llama_tokenizer
         
         self.llama_base_model.eval()
         self.llama_model.eval()
@@ -91,11 +128,16 @@ class CounselingChat:
         
         self.tracker = ChatTracker()
         # vllm (chatbot)
-        self.vllm = httpx.AsyncClient(
-            base_url = "http://141.223.163.135:9000/v1",
-            timeout = 60.0
+        
+        VLLM_API_BASE = os.getenv(
+            "VLLM_API_BASE",
+            "http://141.223.163.135:9000/v1"
         )
-        with open('Counseling_KOR_2025/data/counsel_prompt.yaml') as file:
+        self.vllm = httpx.AsyncClient(
+            base_url=VLLM_API_BASE,
+            timeout=60.0
+        )
+        with open(DEPRESSION_YAML_PATH) as file:
             self.prompts = yaml.load(file, Loader=yaml.FullLoader)
 
         
@@ -114,7 +156,7 @@ class CounselingChat:
 
             # PIL 이미지로 변환 후 저장
             img_out = Image.open(io.BytesIO(image_data))
-            output_path = '/home/yeajinmin/Counseling_KOR_2025/pic/output.png'
+            output_path = 'Counseling_KOR_2025/pic/output.png'
             img_out.save(output_path)
 
             # DeepFace 분석
@@ -130,7 +172,7 @@ class CounselingChat:
         
         finally:
             # 임시 파일 삭제
-            output_path = '/home/yeajinmin/Counseling_KOR_2025/pic/output.png'
+            output_path = 'Counseling_KOR_2025/pic/output.png'
             if os.path.exists(output_path):
                 os.remove(output_path)
 
@@ -180,13 +222,20 @@ class CounselingChat:
                 if mode != "result":
                     non_result_reqs.append(req)
 
-            if non_result_reqs:
-                await asyncio.gather(*[self.get_phase(req.item) for req in non_result_reqs])
+            try:
+                if non_result_reqs:
+                    await asyncio.gather(*[self.get_phase(req.item) for req in non_result_reqs])
 
-            # batch 단위 generation 수행
-            gen_results = await asyncio.gather(
-                *[self.generate(self.tracker.get_chat_mode(req.item.sender_id), req.item, req.meta) for req in batch]
-            )
+                # batch 단위 generation 수행
+                gen_results = await asyncio.gather(
+                    *[self.generate(self.tracker.get_chat_mode(req.item.sender_id), req.item, req.meta) for req in batch]
+                )
+            except Exception as e:
+                logging.error("Batch generation failed: %s", e, exc_info=True)
+                for req in batch:
+                    if not req.future.done():
+                        req.future.set_exception(e)
+                continue
 
             # 생성 결과 저장 및 요청 future 반환
             for req, out in zip(batch, gen_results):
@@ -274,7 +323,7 @@ class CounselingChat:
         # print(f"phase: {current_phase} to {next_phase}")
         
         # phase 전환 로그를 저장할 경로 준비
-        log_dir = "logs"
+        log_dir = LOG_DIR
         os.makedirs(log_dir, exist_ok=True)
 
         log_time = self.tracker.get_time(sender_id)
@@ -316,7 +365,7 @@ class CounselingChat:
     def _load_label_examples(self): # 질문의 예시를 가져와서 prompt에 넣을 수 있도록 함
         # 모델이 더 다양한 질문을 하기 위한 과거 질문 데이터 활용
 
-        SCORE_FILE = "Counseling_KOR_2025/data/scores_output_clean.jsonl"
+        SCORE_FILE = LABEL_EXAMPLES_PATH
 
         label_examples = defaultdict(list)
 
@@ -554,7 +603,7 @@ class CounselingChat:
         # print("detect_symptom 함수")
         instruction = self.prompts["cesd_symptom_instruction"]
         input_text = self.symptom_format(item.text, instruction)
-        inputs = self.llama_tokenizer(input_text['text'], return_tensors="pt", padding='max_length', truncation=True, max_length=1024).to('cuda:1')
+        inputs = self.llama_tokenizer(input_text['text'], return_tensors="pt", padding='max_length', truncation=True, max_length=1024).to(self.LLAMA_DEVICE)
         self.llama_model.set_adapter("symptom")
         with torch.no_grad():
             outputs = self.llama_model(**inputs)
@@ -617,7 +666,7 @@ class CounselingChat:
         instruction = self.prompts["cesd_symptom_score"]
 
         formatted = self.freq_format(item.text, instruction)
-        inputs = self.llama_tokenizer(formatted, return_tensors="pt").to("cuda:1")
+        inputs = self.llama_tokenizer(formatted, return_tensors="pt").to(self.LLAMA_DEVICE)
 
          # 점수 생성
         with torch.no_grad():

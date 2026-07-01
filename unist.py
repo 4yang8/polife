@@ -10,9 +10,10 @@ load_dotenv()
 
 app = FastAPI()
 client = OpenAI(api_key=os.environ.get("UNIST_GPT_API"))
+LOG_DIR = Path(os.getenv("LOG_DIR", "logs"))
 
 def get_latest_chat_file(user_id: str) -> Path | None:
-    base_dir = Path(f"logs/{user_id}")
+    base_dir = LOG_DIR / user_id
     if not base_dir.exists():
         return None
 
@@ -160,7 +161,7 @@ async def generate_summary(user_id: str):
         now = datetime.now()
         ts = now.strftime("%Y-%m-%d_%H-%M-%S")
 
-        summary_path = Path(f"logs/{user_id}/{ts}_{user_id}_summary.json")
+        summary_path = LOG_DIR / user_id / f"{ts}_{user_id}_summary.json"
         summary_path.parent.mkdir(parents=True, exist_ok=True)
 
         summary_data = {
@@ -188,7 +189,7 @@ async def generate_summary(user_id: str):
 
 @app.get("/summary_status")
 async def summary_status(user_id: str):
-    base_dir = Path(f"logs/{user_id}")
+    base_dir = LOG_DIR / user_id
 
     if not base_dir.exists():
         return {"status": "not_started"}
@@ -214,7 +215,7 @@ async def summary_status(user_id: str):
 
 @app.get("/get_summary")
 async def get_summary(user_id: str):
-    base_dir = Path(f"logs/{user_id}")
+    base_dir = LOG_DIR / user_id
 
     if not base_dir.exists():
         return JSONResponse(

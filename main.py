@@ -24,7 +24,8 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 
-UNIST_API_BASE = "http://127.0.0.1:8001"
+UNIST_API_BASE = os.getenv("UNIST_API_BASE", "http://127.0.0.1:8001")
+LOG_DIR = os.getenv("LOG_DIR", "logs")
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
@@ -41,7 +42,7 @@ app.add_middleware(
 chatbot = CounselingChat(use_lora=True)
 
 # 24시간 이내 재접속이면 기존 상담 상태를 복원하고, 아니면 새 상담 상태로 초기화
-def ensure_tracker_time_on_connect(tracker, user_id: str, base_dir: str = "logs", now_dt: datetime | None = None) -> None:
+def ensure_tracker_time_on_connect(tracker, user_id: str, base_dir: str = LOG_DIR, now_dt: datetime | None = None) -> None:
     
     now_dt = now_dt or datetime.now()
 
@@ -105,7 +106,7 @@ def ensure_tracker_time_on_connect(tracker, user_id: str, base_dir: str = "logs"
 def save_tracker_state(
     tracker,
     user_id: str,
-    base_dir: str = "logs",
+    base_dir: str = LOG_DIR,
     safe_time: Optional[str] = None,   # ← 'YYYY-MM-DD HH:MM:SS' 형태 문자열
     dt: Optional[datetime] = None      # ← 없으면 now()로 대체
 ):
@@ -166,7 +167,7 @@ async def require_token(request: Request):
 async def send_recent_logs(user_id: str):
     try:
         user_id = urllib.parse.unquote(user_id)
-        log_dir = os.path.join("logs", user_id)
+        log_dir = os.path.join(LOG_DIR, user_id)
 
         if not os.path.exists(log_dir):
             return JSONResponse(
@@ -215,7 +216,7 @@ async def send_recent_logs(user_id: str):
     
 # 한 턴 대화를 로그 저장, state 업데이트
 def save_turn_and_state_sync(chatbot, item, final_response, safe_time):
-    log_dir = os.path.join("logs", item.sender_id)
+    log_dir = os.path.join(LOG_DIR, item.sender_id)
     os.makedirs(log_dir, exist_ok=True)
 
     safe_time_for_fn = safe_time.replace(" ", "_").replace(":", "-")
@@ -244,19 +245,19 @@ def save_turn_and_state_sync(chatbot, item, final_response, safe_time):
     with open(log_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    save_tracker_state(chatbot.tracker, item.sender_id, base_dir="logs", safe_time=safe_time)
+    save_tracker_state(chatbot.tracker, item.sender_id, base_dir=LOG_DIR, safe_time=safe_time)
 
 @app.get("/send_recent_status")
 async def send_recent_status(user_id: str):
     """
-    logs/{user_id}/ 폴더 내에서
+    LOG_DIR/{user_id}/ 폴더 내에서
     'state_'로 시작하는 가장 최신 JSON 파일을 반환
     """
     try:
         # URL 인코딩 복원
         user_id = urllib.parse.unquote(user_id)
 
-        log_dir = os.path.join("logs", user_id)
+        log_dir = os.path.join(LOG_DIR, user_id)
 
         # 폴더 존재 확인
         if not os.path.exists(log_dir):

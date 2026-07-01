@@ -2,6 +2,26 @@ import os
 import pytorch_lightning as pl
 from transformers import BartForConditionalGeneration, AutoTokenizer
 import argparse
+from dotenv import load_dotenv
+
+load_dotenv()
+
+HF_LOCAL_FILES_ONLY = os.getenv("HF_LOCAL_FILES_ONLY", "1").lower() in ("1", "true", "yes", "on")
+if HF_LOCAL_FILES_ONLY:
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+
+PERSONA_MODEL_NAME = os.getenv("PERSONA_MODEL_NAME", "gogamza/kobart-base-v2")
+PERSONA_MODEL_PATH = os.getenv("PERSONA_MODEL_PATH")
+PERSONA_DEVICE = os.getenv("PERSONA_DEVICE", os.getenv("LLAMA_DEVICE", "cuda:0"))
+
+
+def resolve_persona_model_path(model_dir_or_name: str) -> str:
+    if PERSONA_MODEL_PATH:
+        if HF_LOCAL_FILES_ONLY and not os.path.isdir(PERSONA_MODEL_PATH):
+            raise FileNotFoundError(f"PERSONA_MODEL_PATH does not exist: {PERSONA_MODEL_PATH}")
+        return PERSONA_MODEL_PATH
+    return model_dir_or_name
 
 # KoBART 기반 persona 추출 모델을 LightningModule 형태로 감싸는 클래스
 class LitModel(pl.LightningModule):
@@ -19,7 +39,7 @@ class PersonaExtractor:
     _instance = None  # 싱글톤 인스턴스 저장
 
     # 모델이 여러 번 로드되지 않도록 싱글톤 방식으로 인스턴스 생성
-    def __new__(cls, model_dir_or_name="gogamza/kobart-base-v2"):
+    def __new__(cls, model_dir_or_name=PERSONA_MODEL_NAME):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialize(model_dir_or_name)
@@ -28,8 +48,9 @@ class PersonaExtractor:
     # tokenizer와 persona extraction 모델 로드
     def _initialize(self, model_dir_or_name):
         print("Loading model and tokenizer...")
-        self.tokenizer = AutoTokenizer.from_pretrained(model_dir_or_name)
-        bart_model = BartForConditionalGeneration.from_pretrained(model_dir_or_name)
+        model_path = resolve_persona_model_path(model_dir_or_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_path, local_files_only=HF_LOCAL_FILES_ONLY)
+        bart_model = BartForConditionalGeneration.from_pretrained(model_path, local_files_only=HF_LOCAL_FILES_ONLY)
 
         # Add special tokens
         self.tokenizer.add_special_tokens({'additional_special_tokens': ["<persona>", "<No persona>"]})
@@ -42,7 +63,7 @@ class PersonaExtractor:
             model=bart_model,
             map_location = "cpu"
         )
-        self.model.to('cuda:1')
+        self.model.to(PERSONA_DEVICE)
         self.model.eval()
         print("Model and tokenizer loaded successfully!")
     
@@ -50,7 +71,7 @@ class PersonaExtractor:
     def predict_persona(self, input_text, eval_beams=5, max_new_tokens=128):
 
         # Tokenize input
-        inputs = self.tokenizer(input_text, return_tensors="pt", max_length=256, truncation=True).to('cuda:1')
+        inputs = self.tokenizer(input_text, return_tensors="pt", max_length=256, truncation=True).to(PERSONA_DEVICE)
 
         # Generate persona text
         outputs = self.model.model.generate(
