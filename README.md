@@ -34,26 +34,26 @@ cp .env.example .env
 권장 cache 위치:
 
 ```bash
-/home/yeajinmin/.cache/huggingface
+/home/root/.cache/huggingface
 ```
 
 `.env`에는 아래처럼 설정합니다.
 
 ```env
 HF_HOME=/root/.cache/huggingface
-HOST_HF_CACHE_DIR=/home/yeajinmin/.cache/huggingface
+HOST_HF_CACHE_DIR=/home/{user_name}/.cache/huggingface
 ```
 
-컨테이너 안에서는 `/root/.cache/huggingface`로 보이고, 실제 파일은 호스트의 `/home/yeajinmin/.cache/huggingface`를 사용합니다.
+컨테이너 안에서는 `/root/.cache/huggingface`로 보이고, 실제 파일은 호스트의 `/home/{user_name}/.cache/huggingface`를 사용합니다.
 
 ## 3. Download Models
 
 먼저 Hugging Face token을 준비합니다. Llama 3.1은 gated model이므로 Hugging Face 웹에서 `meta-llama/Llama-3.1-8B-Instruct` 접근 승인이 되어 있어야 합니다.
 
 ```bash
-cd /home/yeajinmin/Counseling_KOR_2025_docker_try1
+cd /home/{user_name}/Polife_docekr
 
-export HF_HOME=/home/yeajinmin/.cache/huggingface
+export HF_HOME=/home/{user_name}/.cache/huggingface
 export HF_TOKEN=$(grep '^HF_TOKEN=' .env | cut -d= -f2-)
 ```
 
@@ -74,7 +74,7 @@ hf download gogamza/kobart-base-v2
 Llama snapshot 경로를 확인합니다.
 
 ```bash
-find /home/yeajinmin/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct/snapshots \
+find /home/{user_name}/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct/snapshots \
   -maxdepth 1 -mindepth 1 -type d
 ```
 
@@ -124,7 +124,7 @@ DOCKER_UNIST_API_BASE=http://unist:8001
 vLLM 서버가 원격 서버에 있다면:
 
 ```env
-DOCKER_VLLM_API_BASE=http://141.223.163.135:9000/v1
+DOCKER_VLLM_API_BASE=http://{server}:9000/v1
 ```
 
 vLLM 서버가 호스트 머신의 `localhost:9000`에 있다면:
@@ -136,6 +136,7 @@ DOCKER_VLLM_API_BASE=http://host.docker.internal:9000/v1
 ## 5. GPU Setting
 
 현재 Compose 설정은 호스트 GPU `1`번만 컨테이너에 넘기고, 컨테이너 내부에서는 `cuda:0`으로 사용합니다.
+-> GPU 설정에 맞게 번호를 수정하여 실행하세요. 
 
 ```yaml
 device_ids: ["1"]
@@ -213,13 +214,13 @@ docker compose exec main curl --max-time 5 "$VLLM_API_BASE/models"
 호스트 cache 확인:
 
 ```bash
-du -sh /home/yeajinmin/.cache/huggingface
+du -sh /home/{user_name}/.cache/huggingface
 ```
 
 Llama safetensors 확인:
 
 ```bash
-find /home/yeajinmin/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct/snapshots \
+find /home/{user_name}/.cache/huggingface/hub/models--meta-llama--Llama-3.1-8B-Instruct/snapshots \
   -name 'model-*.safetensors' -printf '%f\n' | sort
 ```
 
