@@ -49,6 +49,7 @@ HOST_HF_CACHE_DIR=/home/{user_name}/.cache/huggingface
 ## 3. Download Models
 
 먼저 Hugging Face token을 준비합니다. Llama 3.1은 gated model이므로 Hugging Face 웹에서 `meta-llama/Llama-3.1-8B-Instruct` 접근 승인이 되어 있어야 합니다.
+또한, lora checkpoints들은 별도로 전달드린 models 폴더를 사용해주세요.
 
 ```bash
 cd /home/{user_name}/Polife_docekr
