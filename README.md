@@ -1,4 +1,4 @@
-# Counseling KOR Docker Runbook
+# Korean Depression Symptom Assessment Chatbot Docker Runbook
 
 Docker Compose로 실행하기 전에 아래 준비를 먼저 끝내야 합니다.
 
